@@ -1,0 +1,199 @@
+	cd /root/myos/busybox-1.36.1/_install
+
+cat > etc/init.d/rcS << 'EOF'
+#!/bin/sh
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs dev /dev
+
+echo "========================================"
+echo "       My OS has booted!               "
+echo "========================================"
+
+echo "Setting up network..."
+ifconfig lo 127.0.0.1 up
+ifconfig eth0 10.0.2.15 netmask 255.255.255.0 up
+route add default gw 10.0.2.2
+echo "nameserver 8.8.8.8" > /etc/resolv.conf
+echo "nameserver 8.8.4.4" >> /etc/resolv.conf
+echo "Network ready! IP: 10.0.2.15"
+
+echo "Mounting disk..."
+mount /dev/vda /mnt/disk
+echo "Disk ready: /mnt/disk"
+
+if ping -c 1 8.8.8.8 > /dev/null 2>&1; then
+    echo "Internet available!"
+else
+    echo "No internet"
+fi
+
+setsid cttyhack sh
+EOF
+
+chmod +x etc/init.d/rcS
+
+cat > usr/bin/ghget << 'EOF'
+#!/bin/sh
+# ghget - universal file downloader
+
+if [ $# -lt 2 ]; then
+    echo "Usage:"
+    echo "  ghget URL file                    - direct link"
+    echo "  ghget -g user/repo [version] file - GitHub Releases"
+    echo ""
+    echo "Examples:"
+    echo "  ghget http://example.com/ page.html"
+    echo "  ghget -g sharkdp/bat v0.24.0 bat.tar.gz"
+    exit 1
+fi
+
+if [ "$1" = "-g" ]; then
+    if [ $# -eq 4 ]; then
+        REPO="$2"
+        TAG="$3"
+        FILE="$4"
+        URL="https://github.com/${REPO}/releases/download/${TAG}/${FILE}"
+    elif [ $# -eq 3 ]; then
+        REPO="$2"
+        FILE="$3"
+        URL="https://github.com/${REPO}/releases/latest/download/${FILE}"
+    else
+        echo "Invalid arguments"
+        exit 1
+    fi
+    
+    echo "Downloading from GitHub: ${REPO}"
+    wget --header "User-Agent: Mozilla/5.0" -q -O "/mnt/disk/${FILE}" "$URL" 2>/dev/null
+    
+    if [ $? -ne 0 ] || [ ! -s "/mnt/disk/${FILE}" ]; then
+        URL_HTTP=$(echo "$URL" | sed 's/https:/http:/')
+        wget -q -O "/mnt/disk/${FILE}" "$URL_HTTP" 2>/dev/null
+    fi
+else
+    URL="$1"
+    FILE="$2"
+    echo "Downloading ${FILE}..."
+    wget -q -O "/mnt/disk/${FILE}" "$URL"
+fi
+
+if [ -s "/mnt/disk/${FILE}" ]; then
+    size=$(ls -lh "/mnt/disk/${FILE}" | awk '{print $5}')
+    echo "Done! (${size}) -> /mnt/disk/${FILE}"
+    
+    case "$FILE" in
+        *.tar.gz|*.tgz)
+            echo "   Archive tar.gz"
+            echo "   Extract: tar -xzf /mnt/disk/${FILE} -C /mnt/disk/"
+            ;;
+        *.tar.bz2|*.tbz2)
+            echo "   Archive tar.bz2"
+            echo "   Extract: tar -xjf /mnt/disk/${FILE} -C /mnt/disk/"
+            ;;
+        *.tar.xz|*.txz)
+            echo "   Archive tar.xz"
+            echo "   Extract: tar -xJf /mnt/disk/${FILE} -C /mnt/disk/"
+            ;;
+        *.zip)
+            echo "   ZIP archive"
+            echo "   Extract: unzip /mnt/disk/${FILE} -d /mnt/disk/"
+            ;;
+        *.html|*.htm|*.txt|*.md|*.json|*.xml|*.css|*.js)
+            echo "   Text file"
+            echo "   View: cat /mnt/disk/${FILE}"
+            ;;
+        *)
+            chmod +x "/mnt/disk/${FILE}" 2>/dev/null
+            echo "   Possibly executable"
+            echo "   Run: /mnt/disk/${FILE}"
+            ;;
+    esac
+else
+    echo "Download failed"
+    rm -f "/mnt/disk/${FILE}"
+    exit 1
+fi
+EOF
+
+chmod +x usr/bin/ghget
+
+find . | cpio -o -H newc | gzip > /root/myos/rootfs.cpio.gz#!/bin/sh
+# ghget - универсальный загрузчик
+
+if [ $# -lt 2 ]; then
+    echo "Использование:"
+    echo "  ghget URL файл                    - прямая ссылка"
+    echo "  ghget -g user/repo [версия] файл  - GitHub Releases"
+    echo ""
+    echo "Примеры:"
+    echo "  ghget http://example.com/ page.html"
+    echo "  ghget -g sharkdp/bat v0.24.0 bat.tar.gz"
+    exit 1
+fi
+
+if [ "$1" = "-g" ]; then
+    if [ $# -eq 4 ]; then
+        REPO="$2"
+        TAG="$3"
+        FILE="$4"
+        URL="https://github.com/${REPO}/releases/download/${TAG}/${FILE}"
+    elif [ $# -eq 3 ]; then
+        REPO="$2"
+        FILE="$3"
+        URL="https://github.com/${REPO}/releases/latest/download/${FILE}"
+    else
+        echo "Ошибка аргументов"
+        exit 1
+    fi
+    
+    echo "Скачиваю с GitHub: ${REPO}"
+    wget --header "User-Agent: Mozilla/5.0" -q -O "/mnt/disk/${FILE}" "$URL" 2>/dev/null
+    
+    if [ $? -ne 0 ] || [ ! -s "/mnt/disk/${FILE}" ]; then
+        URL_HTTP=$(echo "$URL" | sed 's/https:/http:/')
+        wget -q -O "/mnt/disk/${FILE}" "$URL_HTTP" 2>/dev/null
+    fi
+else
+    URL="$1"
+    FILE="$2"
+    echo "Скачиваю ${FILE}..."
+    wget -q -O "/mnt/disk/${FILE}" "$URL"
+fi
+
+if [ -s "/mnt/disk/${FILE}" ]; then
+    size=$(ls -lh "/mnt/disk/${FILE}" | awk '{print $5}')
+    echo "✅ Готово! (${size}) -> /mnt/disk/${FILE}"
+    
+    # Определяем тип и даём подсказки
+    case "$FILE" in
+        *.tar.gz|*.tgz)
+            echo "   📦 Архив tar.gz"
+            echo "   Распаковать: tar -xzf /mnt/disk/${FILE} -C /mnt/disk/"
+            ;;
+        *.tar.bz2|*.tbz2)
+            echo "   📦 Архив tar.bz2"
+            echo "   Распаковать: tar -xjf /mnt/disk/${FILE} -C /mnt/disk/"
+            ;;
+        *.tar.xz|*.txz)
+            echo "   📦 Архив tar.xz"
+            echo "   Распаковать: tar -xJf /mnt/disk/${FILE} -C /mnt/disk/"
+            ;;
+        *.zip)
+            echo "   📦 ZIP архив"
+            echo "   Распаковать: unzip /mnt/disk/${FILE} -d /mnt/disk/"
+            ;;
+        *.html|*.htm|*.txt|*.md|*.json|*.xml|*.css|*.js)
+            echo "   📄 Текстовый файл"
+            echo "   Просмотреть: cat /mnt/disk/${FILE}"
+            ;;
+        *)
+            chmod +x "/mnt/disk/${FILE}" 2>/dev/null
+            echo "   ⚡ Возможно исполняемый"
+            echo "   Запустить: /mnt/disk/${FILE}"
+            ;;
+    esac
+else
+    echo "❌ Ош�rror download"
+    rm -f "/mnt/disk/${FILE}"
+    exit 1
+fi
